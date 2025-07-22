@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WIT Image Browser</title>
+  <script src="papaparse.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 1rem;
+      max-width: 1200px;
+      margin: auto;
+    }
+
+    .controls {
+      margin-bottom: 1rem;
+    }
+
+    .controls input,
+    .controls select {
+      margin-right: 1rem;
+      padding: 0.4rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+
+    .item {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      border-radius: 4px;
+      text-align: center;
+      background: #f9f9f9;
+    }
+
+    .item img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    #paginationTop, #paginationBottom {
+      text-align: center;
+      margin: 1.5rem 0;
+    }
+
+    #paginationTop button, #paginationBottom button {
+      margin: 0 0.5rem;
+      padding: 0.5rem 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>WIT Image Dataset Browser</h1>
+
+  <input type="file" id="fileInput" accept=".tsv"><br>
+
+  <div class="controls">
+    <input type="text" id="searchInput" placeholder="Search titles or captions...">
+    <select id="languageFilter">
+      <option value="">All Languages</option>
+    </select>
+    <label for="pageJump">Go to page:</label>
+    <input type="number" id="pageJump" min="1" style="width: 60px;">
+    <button onclick="jumpToPage()">Go</button>
+  </div>
+
+  <div id="paginationTop"></div>
+  <div id="output"></div>
+  <div id="paginationBottom"></div>
+
+  <script>
+    let allRows = [];
+    let filteredRows = [];
+    let currentPage = 0;
+    const pageSize = 40;
+
+    function renderPage() {
+      const output = document.getElementById('output');
+      output.innerHTML = '';
+
+      const start = currentPage * pageSize;
+      const end = start + pageSize;
+      const rows = filteredRows.slice(start, end);
+
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+
+      rows.forEach(row => {
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <img src="${row.image_url}" alt="Image">
+          <strong>${row.page_title || '[No Title]'}</strong><br>
+          <em style="font-size: 0.85em;">${row.caption_alt_text_description}</em><br>
+          <a href="${row.page_url}" target="_blank">View Page</a>
+        `;
+        grid.appendChild(div);
+      });
+
+      output.appendChild(grid);
+      updateControls();
+    }
+
+    function updateControls() {
+      const totalPages = Math.ceil(filteredRows.length / pageSize);
+      const controlsHTML = `
+        <button onclick="prevPage()" ${currentPage === 0 ? 'disabled' : ''}>⟨ Prev</button>
+        Page ${currentPage + 1} of ${totalPages}
+        <button onclick="nextPage()" ${currentPage >= totalPages - 1 ? 'disabled' : ''}>Next ⟩</button>
+      `;
+      document.getElementById('paginationTop').innerHTML = controlsHTML;
+      document.getElementById('paginationBottom').innerHTML = controlsHTML;
+    }
+
+    function nextPage() {
+      if ((currentPage + 1) * pageSize < filteredRows.length) {
+        currentPage++;
+        renderPage();
+      }
+    }
+
+    function prevPage() {
+      if (currentPage > 0) {
+        currentPage--;
+        renderPage();
+      }
+    }
+
+    function jumpToPage() {
+      const input = document.getElementById('pageJump');
+      const target = parseInt(input.value, 10) - 1;
+      const maxPage = Math.ceil(filteredRows.length / pageSize);
+      if (!isNaN(target) && target >= 0 && target < maxPage) {
+        currentPage = target;
+        renderPage();
+      }
+    }
+
+    function applyFilters() {
+      const query = document.getElementById('searchInput').value.toLowerCase().trim();
+      const lang = document.getElementById('languageFilter').value;
+
+      filteredRows = allRows.filter(row => {
+        const matchLang = !lang || row.language === lang;
+        const matchQuery =
+          !query ||
+          (row.page_title && row.page_title.toLowerCase().includes(query)) ||
+          (row.caption_alt_text_description && row.caption_alt_text_description.toLowerCase().includes(query));
+        return matchLang && matchQuery;
+      });
+
+      currentPage = 0;
+      renderPage();
+    }
+
+    document.getElementById('searchInput').addEventListener('input', applyFilters);
+    document.getElementById('languageFilter').addEventListener('change', applyFilters);
+
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      Papa.parse(file, {
+        header: true,
+        delimiter: '\t',
+        skipEmptyLines: true,
+        complete: function(results) {
+          allRows = results.data.filter(row =>
+            row.image_url &&
+            row.caption_alt_text_description &&
+            row.image_url.startsWith('http')
+          );
+          console.log(`Loaded ${allRows.length} valid image+caption rows`);
+
+          const langSet = new Set(allRows.map(row => row.language).filter(Boolean));
+          const langSelect = document.getElementById('languageFilter');
+          langSelect.innerHTML = '<option value="">All Languages</option>';
+          [...langSet].sort().forEach(lang => {
+            const opt = document.createElement('option');
+            opt.value = lang;
+            opt.textContent = lang;
+            langSelect.appendChild(opt);
+          });
+
+          filteredRows = allRows.slice();
+          currentPage = 0;
+          renderPage();
+        }
+      });
+    });
+  </script>
+</body>
+</html>
